@@ -1,0 +1,6 @@
+# Rahasia (token Blynk, WiFi) - jangan pernah di-upload
+firmware/monitoring_tanah/secrets.h
+
+# Editor dan file sementara
+.vscode/
+*.bak
