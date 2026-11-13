@@ -6,6 +6,7 @@
 #include "config.h"
 #include "secrets.h"
 #include "sensor_ph.h"
+#include "sensor_kelembapan.h"
 #include "evaluasi.h"
 #include "lcd_display.h"
 #include "cloud.h"
@@ -13,46 +14,75 @@
 BlynkTimer timer;
 
 // =====================================
-// PEMBACAAN SENSOR
+// PEMBACAAN KEDUA SENSOR
 // =====================================
 
 void sendSensor() {
 
     // Membaca sensor pH
-    HasilPH hasil = bacaSensorPH();
+    HasilPH hasilPH = bacaSensorPH();
 
-    // Menentukan kondisi tanah
-    String statusTanah = klasifikasiTanah(hasil.ph);
+    // Membaca sensor kelembapan
+    HasilKelembapan hasilKelembapan = bacaSensorKelembapan();
+
+    // Menentukan status kedua sensor
+    String statusTanah = klasifikasiTanah(hasilPH.ph);
+    String statusKelembapan = klasifikasiKelembapan(hasilKelembapan.persen);
 
     // =================================
     // SERIAL MONITOR
     // =================================
 
     Serial.println();
-    Serial.println("_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-");
-    Serial.println("==== KELOMPOK 04 | SISTEM MONITORING PH & KELEMBABAN TANAH ====");
-    Serial.println("_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-");
+    Serial.println("========================================");
+    Serial.println("MONITORING pH DAN KELEMBAPAN TANAH");
+    Serial.println("========================================");
 
+    Serial.println("========== SENSOR pH ==========");
     Serial.print("ADC Average : ");
-    Serial.println(hasil.adc, 2);
+    Serial.println(hasilPH.adc, 2);
 
     Serial.print("Voltage     : ");
-    Serial.print(hasil.volt, 3);
+    Serial.print(hasilPH.volt, 3);
     Serial.println(" V");
 
     Serial.print("pH Value    : ");
-    Serial.println(hasil.ph, 2);
+    Serial.println(hasilPH.ph, 2);
 
-    Serial.print("Status Tanah: ");
+    Serial.print("Status pH   : ");
     Serial.println(statusTanah);
 
-    Serial.println("--------------------------------");
+    Serial.println();
+    Serial.println("====== SENSOR KELEMBAPAN ======");
+    Serial.print("ADC Moisture: ");
+    Serial.println(hasilKelembapan.adc);
+
+    Serial.print("Kelembapan  : ");
+    Serial.print(hasilKelembapan.persen, 2);
+    Serial.println(" %");
+
+    Serial.print("Status      : ");
+    Serial.println(statusKelembapan);
+
+    Serial.print("ADC Kering  : ");
+    Serial.println(NILAI_KERING);
+
+    Serial.print("ADC Basah   : ");
+    Serial.println(NILAI_BASAH);
 
     // =================================
     // LCD DISPLAY
     // =================================
 
-    lcdTampilPH(hasil.ph, statusTanah);
+    lcdTampilMonitoring(
+        hasilPH.ph,
+        hasilPH.volt,
+        statusTanah,
+        hasilKelembapan.persen,
+        statusKelembapan,
+        hasilPH.adc,
+        hasilKelembapan.adc
+    );
 
     // =================================
     // WIFI STATUS
@@ -78,22 +108,19 @@ void sendSensor() {
         Serial.println("Connected");
 
         cloudKirim(
-            hasil.ph,
-            hasil.volt,
-            statusTanah
+            hasilPH.ph,
+            hasilKelembapan.persen,
+            statusTanah,
+            statusKelembapan
         );
 
         Serial.println("Data berhasil dikirim ke Blynk!");
-
     }
     else {
-
         Serial.println("Disconnected");
-
     }
 
-    Serial.println("================================");
-
+    Serial.println("========================================");
 }
 
 // =====================================
@@ -103,17 +130,21 @@ void sendSensor() {
 void setup() {
 
     Serial.begin(115200);
-    delay(1500);
+    delay(1000);
 
     Serial.println();
-    Serial.println("==============================");
-    Serial.println("SISTEM MONITORING SENSOR pH");
-    Serial.println("==============================");
+    Serial.println("========================================");
+    Serial.println("SISTEM MONITORING pH DAN KELEMBAPAN");
+    Serial.println("========================================");
 
-    // Konfigurasi ADC
+    // Konfigurasi ADC ESP32
     analogReadResolution(12);
 
+    analogSetPinAttenuation(PH_SENSOR_PIN, ADC_11db);
+    analogSetPinAttenuation(MOISTURE_SENSOR_PIN, ADC_11db);
+
     pinMode(PH_SENSOR_PIN, INPUT);
+    pinMode(MOISTURE_SENSOR_PIN, INPUT);
 
     // Inisialisasi LCD
     lcdMulai();
@@ -122,6 +153,7 @@ void setup() {
     // WIFI CONNECTION
     // =================================
 
+    lcdStatus("Connecting WiFi", "Please Wait...");
     Serial.println("Menghubungkan WiFi...");
 
     WiFi.mode(WIFI_STA);
@@ -130,12 +162,9 @@ void setup() {
     int timeout = 0;
 
     while (WiFi.status() != WL_CONNECTED && timeout < 20) {
-
         delay(500);
         Serial.print(".");
-
         timeout++;
-
     }
 
     Serial.println();
@@ -143,7 +172,6 @@ void setup() {
     if (WiFi.status() == WL_CONNECTED) {
 
         Serial.println("WiFi Connected!");
-
         Serial.print("IP Address: ");
         Serial.println(WiFi.localIP());
 
@@ -154,34 +182,23 @@ void setup() {
         // =================================
 
         Serial.println("Menghubungkan Blynk...");
-
         cloudMulai();
 
         if (Blynk.connect(5000)) {
-
             Serial.println("Blynk Connected!");
-
             lcdStatus("WiFi Connected", "Blynk Connected");
-
         }
         else {
-
             Serial.println("Blynk Connection Failed!");
-
-            lcdStatus("WiFi Connected", "Blynk Failed");
-
+            lcdStatus("Blynk Failed", "Local Monitoring");
         }
-
     }
     else {
-
         Serial.println("WiFi Connection Failed!");
-
-        lcdStatus("WiFi Failed", "Check Connection");
-
+        lcdStatus("WiFi Failed", "Offline Mode");
     }
 
-    delay(1500);
+    delay(2000);
     lcd.clear();
 
     // =================================
@@ -190,11 +207,10 @@ void setup() {
 
     timer.setInterval(INTERVAL_SENSOR, sendSensor);
 
-    Serial.println("==============================");
+    Serial.println("========================================");
     Serial.println("SETUP SELESAI");
     Serial.println("Monitoring dimulai...");
-    Serial.println("==============================");
-
+    Serial.println("========================================");
 }
 
 // =====================================
@@ -204,7 +220,6 @@ void setup() {
 void loop() {
 
     Blynk.run();
-
     timer.run();
 
     // =================================
@@ -213,19 +228,14 @@ void loop() {
 
     static unsigned long lastReconnect = 0;
 
-    if (WiFi.status() == WL_CONNECTED &&
-        !Blynk.connected()) {
+    if (WiFi.status() == WL_CONNECTED && !Blynk.connected()) {
 
         if (millis() - lastReconnect >= 5000) {
-
             lastReconnect = millis();
 
             Serial.println("Mencoba menghubungkan Blynk...");
-
             Blynk.connect(1000);
-
         }
-
     }
 
     // =================================
@@ -237,15 +247,10 @@ void loop() {
     if (WiFi.status() != WL_CONNECTED) {
 
         if (millis() - lastWiFiReconnect >= 10000) {
-
             lastWiFiReconnect = millis();
 
             Serial.println("Mencoba menghubungkan WiFi...");
-
             WiFi.reconnect();
-
         }
-
     }
-
 }

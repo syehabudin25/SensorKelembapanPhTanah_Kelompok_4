@@ -7,25 +7,22 @@
 #include "config.h"
 #include "secrets.h"
 
-// Konfigurasi Blynk
 void cloudMulai() {
-
     Blynk.config(BLYNK_AUTH_TOKEN);
-
 }
 
-// Mengirim data sensor ke Blynk
-void cloudKirim(float ph, float volt, String status) {
-
-    // Nilai pH
+// Mengirim empat data sesuai datastream dashboard Blynk:
+// V0 = pH, V1 = kelembapan, V2 = status pH, V3 = status kelembapan.
+void cloudKirim(
+    float ph,
+    float kelembapan,
+    String statusPH,
+    String statusKelembapan
+) {
     Blynk.virtualWrite(VPIN_PH, ph);
-
-    // Tegangan sensor
-    Blynk.virtualWrite(VPIN_VOLT, volt);
-
-    // Kesimpulan kondisi tanah
-    Blynk.virtualWrite(VPIN_STATUS, status);
-
+    Blynk.virtualWrite(VPIN_MOISTURE, kelembapan);
+    Blynk.virtualWrite(VPIN_STATUS, statusPH);
+    Blynk.virtualWrite(VPIN_MOISTURE_STATUS, statusKelembapan);
 }
 
 #endif
